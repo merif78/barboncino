@@ -8,7 +8,7 @@ export const metadata: Metadata = {
   description: "Guide, consigli e curiosità sul mondo del barboncino, scritti da appassionati per appassionati.",
 };
 
-export const revalidate = 3600;
+export const dynamic = "force-dynamic";
 
 export default async function BlogPage() {
   const articles = await prisma.article.findMany({

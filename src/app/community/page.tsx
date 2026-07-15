@@ -11,7 +11,7 @@ export const metadata: Metadata = {
   description: "Unisciti alla community italiana di appassionati di barboncino: condividi esperienze e consigli.",
 };
 
-export const revalidate = 3600;
+export const dynamic = "force-dynamic";
 
 export default async function CommunityPage() {
   const articles = await prisma.article.findMany({
