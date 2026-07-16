@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { auth } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
+import { supabaseAdmin } from "@/lib/supabase";
 
 export async function PUT(request: Request) {
   const session = await auth();
@@ -13,10 +13,14 @@ export async function PUT(request: Request) {
     const body = await request.json();
     const { name, bio, image } = body;
 
-    const user = await prisma.user.update({
-      where: { id: session.user.id },
-      data: { name, bio, image },
-    });
+    const { data: user, error } = await supabaseAdmin
+      .from("User")
+      .update({ name, bio, image, updatedAt: new Date().toISOString() })
+      .eq("id", session.user.id)
+      .select("id, name, email, bio, image")
+      .single();
+
+    if (error) throw error;
 
     return NextResponse.json({ user });
   } catch (error) {

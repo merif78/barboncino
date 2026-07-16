@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { prisma } from "@/lib/prisma";
+import { supabaseAdmin } from "@/lib/supabase";
 import { hashPassword } from "@/lib/password";
 import { registerFormSchema } from "@/lib/validations";
 
@@ -15,20 +15,28 @@ export async function POST(request: Request) {
 
     const { name, email, password } = parsed.data;
 
-    const existing = await prisma.user.findUnique({ where: { email } });
+    const { data: existing } = await supabaseAdmin.from("User").select("id").eq("email", email).maybeSingle();
     if (existing) {
       return NextResponse.json({ error: "Esiste già un account con questa email" }, { status: 409 });
     }
 
-    const user = await prisma.user.create({
-      data: {
+    const { data: user, error } = await supabaseAdmin
+      .from("User")
+      .insert({
+        id: crypto.randomUUID(),
         name,
         email,
         password: hashPassword(password),
-      },
-    });
+        role: "USER",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      })
+      .select("id, name, email")
+      .single();
 
-    return NextResponse.json({ user: { id: user.id, name: user.name, email: user.email } }, { status: 201 });
+    if (error) throw error;
+
+    return NextResponse.json({ user }, { status: 201 });
   } catch (error) {
     console.error(error);
     return NextResponse.json({ error: "Errore durante la registrazione" }, { status: 500 });

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { prisma } from "@/lib/prisma";
+import { supabaseAdmin } from "@/lib/supabase";
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -10,18 +10,17 @@ export async function GET(request: Request) {
     return NextResponse.json({ results: [] });
   }
 
-  const articles = await prisma.article.findMany({
-    where: {
-      OR: [
-        { title: { contains: query, mode: "insensitive" } },
-        { subtitle: { contains: query, mode: "insensitive" } },
-        { content: { contains: query, mode: "insensitive" } },
-      ],
-    },
-    take: 10,
-    include: { category: true },
-    orderBy: { publishedAt: "desc" },
-  });
+  const { data: articles, error } = await supabaseAdmin
+    .from("Article")
+    .select("*, category:Category(*)")
+    .or(`title.ilike.%${query}%,subtitle.ilike.%${query}%,content.ilike.%${query}%`)
+    .order("publishedAt", { ascending: false })
+    .limit(10);
+
+  if (error) {
+    console.error(error);
+    return NextResponse.json({ error: "Errore durante la ricerca" }, { status: 500 });
+  }
 
   return NextResponse.json({ results: articles });
 }

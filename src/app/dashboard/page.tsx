@@ -2,7 +2,7 @@ import Link from "next/link";
 import { Dog, Calendar, Utensils, Footprints } from "lucide-react";
 
 import { auth } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
+import { supabaseAdmin } from "@/lib/supabase";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DogCard } from "@/components/shared/dog-card";
 import { Button } from "@/components/ui/button";
@@ -12,18 +12,19 @@ export default async function DashboardPage() {
   const session = await auth();
   const userId = session?.user?.id;
 
-  const [dogs, upcomingEvents] = await Promise.all([
+  const [{ data: dogs }, { data: upcomingEvents }] = await Promise.all([
     userId
-      ? prisma.dog.findMany({ where: { userId }, orderBy: { createdAt: "desc" } })
-      : Promise.resolve([]),
+      ? supabaseAdmin.from("Dog").select("*").eq("userId", userId).order("createdAt", { ascending: false })
+      : Promise.resolve({ data: [] }),
     userId
-      ? prisma.event.findMany({
-          where: { userId, date: { gte: new Date() } },
-          orderBy: { date: "asc" },
-          take: 5,
-          include: { dog: true },
-        })
-      : Promise.resolve([]),
+      ? supabaseAdmin
+          .from("Event")
+          .select("*, dog:Dog(id, name, photo)")
+          .eq("userId", userId)
+          .gte("date", new Date().toISOString())
+          .order("date", { ascending: true })
+          .limit(5)
+      : Promise.resolve({ data: [] }),
   ]);
 
   return (

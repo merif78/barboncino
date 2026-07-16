@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { auth } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
+import { supabaseAdmin } from "@/lib/supabase";
 import { eventFormSchema } from "@/lib/validations";
 
 interface RouteParams {
@@ -15,10 +15,18 @@ export async function GET(request: Request, { params }: RouteParams) {
   }
 
   const { id } = await params;
-  const event = await prisma.event.findFirst({
-    where: { id, userId: session.user.id },
-    include: { dog: true },
-  });
+
+  const { data: event, error } = await supabaseAdmin
+    .from("Event")
+    .select("*, dog:Dog(id, name, photo)")
+    .eq("id", id)
+    .eq("userId", session.user.id)
+    .maybeSingle();
+
+  if (error) {
+    console.error(error);
+    return NextResponse.json({ error: "Errore nel caricamento dell'evento" }, { status: 500 });
+  }
 
   if (!event) {
     return NextResponse.json({ error: "Evento non trovato" }, { status: 404 });
@@ -43,20 +51,31 @@ export async function PUT(request: Request, { params }: RouteParams) {
       return NextResponse.json({ error: "Dati non validi" }, { status: 400 });
     }
 
-    const existing = await prisma.event.findFirst({ where: { id, userId: session.user.id } });
+    const { data: existing } = await supabaseAdmin
+      .from("Event")
+      .select("id")
+      .eq("id", id)
+      .eq("userId", session.user.id)
+      .maybeSingle();
+
     if (!existing) {
       return NextResponse.json({ error: "Evento non trovato" }, { status: 404 });
     }
 
     const { date, ...rest } = parsed.data;
 
-    const event = await prisma.event.update({
-      where: { id },
-      data: {
+    const { data: event, error } = await supabaseAdmin
+      .from("Event")
+      .update({
         ...rest,
-        date: date ? new Date(date) : undefined,
-      },
-    });
+        date: date ? new Date(date).toISOString() : undefined,
+        updatedAt: new Date().toISOString(),
+      })
+      .eq("id", id)
+      .select()
+      .single();
+
+    if (error) throw error;
 
     return NextResponse.json({ event });
   } catch (error) {
@@ -73,12 +92,23 @@ export async function DELETE(request: Request, { params }: RouteParams) {
 
   const { id } = await params;
 
-  const existing = await prisma.event.findFirst({ where: { id, userId: session.user.id } });
+  const { data: existing } = await supabaseAdmin
+    .from("Event")
+    .select("id")
+    .eq("id", id)
+    .eq("userId", session.user.id)
+    .maybeSingle();
+
   if (!existing) {
     return NextResponse.json({ error: "Evento non trovato" }, { status: 404 });
   }
 
-  await prisma.event.delete({ where: { id } });
+  const { error } = await supabaseAdmin.from("Event").delete().eq("id", id);
+
+  if (error) {
+    console.error(error);
+    return NextResponse.json({ error: "Errore durante l'eliminazione dell'evento" }, { status: 500 });
+  }
 
   return NextResponse.json({ success: true });
 }

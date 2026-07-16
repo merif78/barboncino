@@ -1,6 +1,6 @@
 import type { MetadataRoute } from "next";
 
-import { prisma } from "@/lib/prisma";
+import { supabaseAdmin } from "@/lib/supabase";
 
 const BASE_URL = process.env.NEXTAUTH_URL ?? "https://www.barboncino.it";
 
@@ -18,10 +18,10 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 
   let articleRoutes: MetadataRoute.Sitemap = [];
   try {
-    const articles = await prisma.article.findMany({ select: { slug: true, updatedAt: true } });
-    articleRoutes = articles.map((article) => ({
+    const { data: articles } = await supabaseAdmin.from("Article").select("slug, updatedAt");
+    articleRoutes = (articles ?? []).map((article: { slug: string; updatedAt: string }) => ({
       url: `${BASE_URL}/blog/${article.slug}`,
-      lastModified: article.updatedAt,
+      lastModified: new Date(article.updatedAt),
       changeFrequency: "monthly",
       priority: 0.7,
     }));

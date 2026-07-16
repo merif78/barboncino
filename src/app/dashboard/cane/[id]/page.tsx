@@ -4,7 +4,7 @@ import { notFound } from "next/navigation";
 import { Cake, Scale, Ruler, Palette, Stethoscope, ShieldCheck } from "lucide-react";
 
 import { auth } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
+import { supabaseAdmin } from "@/lib/supabase";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Breadcrumb } from "@/components/shared/breadcrumb";
@@ -19,15 +19,23 @@ export default async function DogDetailPage({ params }: PageProps) {
   const { id } = await params;
   const session = await auth();
 
-  const dog = await prisma.dog.findFirst({
-    where: { id, userId: session?.user?.id },
-    include: {
-      weightHistory: { orderBy: { date: "asc" } },
-      events: { orderBy: { date: "asc" }, take: 5, where: { date: { gte: new Date() } } },
-    },
-  });
+  const { data: dog } = await supabaseAdmin
+    .from("Dog")
+    .select("*, weightHistory:WeightHistory(*), events:Event(*)")
+    .eq("id", id)
+    .eq("userId", session?.user?.id ?? "")
+    .maybeSingle();
 
   if (!dog) notFound();
+
+  // Ordina lo storico peso e gli eventi nel componente
+  const weightHistory = (dog.weightHistory ?? []).sort(
+    (a: { date: string }, b: { date: string }) => new Date(a.date).getTime() - new Date(b.date).getTime()
+  );
+  const upcomingEvents = (dog.events ?? [])
+    .filter((e: { date: string }) => new Date(e.date) >= new Date())
+    .sort((a: { date: string }, b: { date: string }) => new Date(a.date).getTime() - new Date(b.date).getTime())
+    .slice(0, 5);
 
   return (
     <div className="space-y-8">
@@ -114,13 +122,13 @@ export default async function DogDetailPage({ params }: PageProps) {
         </Card>
       </div>
 
-      {dog.weightHistory.length > 0 && (
+      {weightHistory.length > 0 && (
         <Card>
           <CardHeader>
             <CardTitle>Andamento peso e altezza</CardTitle>
           </CardHeader>
           <CardContent>
-            <WeightChart data={dog.weightHistory} />
+            <WeightChart data={weightHistory} />
           </CardContent>
         </Card>
       )}
@@ -130,11 +138,11 @@ export default async function DogDetailPage({ params }: PageProps) {
           <CardTitle>Prossimi eventi</CardTitle>
         </CardHeader>
         <CardContent>
-          {dog.events.length === 0 ? (
+          {upcomingEvents.length === 0 ? (
             <p className="text-brown-400">Nessun evento in programma.</p>
           ) : (
             <ul className="space-y-2">
-              {dog.events.map((event) => (
+              {upcomingEvents.map((event: { id: string; title: string; date: string }) => (
                 <li key={event.id} className="flex justify-between border-b border-beige-100 pb-2 text-sm">
                   <span className="font-medium text-brown-600">{event.title}</span>
                   <span className="text-brown-400">{formatDate(event.date)}</span>

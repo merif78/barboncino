@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { auth } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
+import { supabaseAdmin } from "@/lib/supabase";
 import { dogFormSchema } from "@/lib/validations";
 
 interface RouteParams {
@@ -15,13 +15,28 @@ export async function GET(request: Request, { params }: RouteParams) {
   }
 
   const { id } = await params;
-  const dog = await prisma.dog.findFirst({
-    where: { id, userId: session.user.id },
-    include: { weightHistory: { orderBy: { date: "asc" } } },
-  });
+
+  const { data: dog, error } = await supabaseAdmin
+    .from("Dog")
+    .select("*, weightHistory:WeightHistory(*)")
+    .eq("id", id)
+    .eq("userId", session.user.id)
+    .maybeSingle();
+
+  if (error) {
+    console.error(error);
+    return NextResponse.json({ error: "Errore nel caricamento del cane" }, { status: 500 });
+  }
 
   if (!dog) {
     return NextResponse.json({ error: "Cane non trovato" }, { status: 404 });
+  }
+
+  // Ordina lo storico peso per data crescente
+  if (dog.weightHistory) {
+    dog.weightHistory.sort((a: { date: string }, b: { date: string }) =>
+      new Date(a.date).getTime() - new Date(b.date).getTime()
+    );
   }
 
   return NextResponse.json({ dog });
@@ -43,20 +58,31 @@ export async function PUT(request: Request, { params }: RouteParams) {
       return NextResponse.json({ error: "Dati non validi" }, { status: 400 });
     }
 
-    const existing = await prisma.dog.findFirst({ where: { id, userId: session.user.id } });
+    const { data: existing } = await supabaseAdmin
+      .from("Dog")
+      .select("id")
+      .eq("id", id)
+      .eq("userId", session.user.id)
+      .maybeSingle();
+
     if (!existing) {
       return NextResponse.json({ error: "Cane non trovato" }, { status: 404 });
     }
 
     const { birthDate, ...rest } = parsed.data;
 
-    const dog = await prisma.dog.update({
-      where: { id },
-      data: {
+    const { data: dog, error } = await supabaseAdmin
+      .from("Dog")
+      .update({
         ...rest,
-        birthDate: birthDate ? new Date(birthDate) : undefined,
-      },
-    });
+        birthDate: birthDate ? new Date(birthDate).toISOString() : undefined,
+        updatedAt: new Date().toISOString(),
+      })
+      .eq("id", id)
+      .select()
+      .single();
+
+    if (error) throw error;
 
     return NextResponse.json({ dog });
   } catch (error) {
@@ -73,12 +99,23 @@ export async function DELETE(request: Request, { params }: RouteParams) {
 
   const { id } = await params;
 
-  const existing = await prisma.dog.findFirst({ where: { id, userId: session.user.id } });
+  const { data: existing } = await supabaseAdmin
+    .from("Dog")
+    .select("id")
+    .eq("id", id)
+    .eq("userId", session.user.id)
+    .maybeSingle();
+
   if (!existing) {
     return NextResponse.json({ error: "Cane non trovato" }, { status: 404 });
   }
 
-  await prisma.dog.delete({ where: { id } });
+  const { error } = await supabaseAdmin.from("Dog").delete().eq("id", id);
+
+  if (error) {
+    console.error(error);
+    return NextResponse.json({ error: "Errore durante l'eliminazione del cane" }, { status: 500 });
+  }
 
   return NextResponse.json({ success: true });
 }

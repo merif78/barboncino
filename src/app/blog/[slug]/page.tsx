@@ -3,7 +3,7 @@ import Image from "next/image";
 import { notFound } from "next/navigation";
 import { Clock } from "lucide-react";
 
-import { prisma } from "@/lib/prisma";
+import { supabaseAdmin } from "@/lib/supabase";
 import { Breadcrumb } from "@/components/shared/breadcrumb";
 import { Badge } from "@/components/ui/badge";
 import { ArticleCard } from "@/components/shared/article-card";
@@ -17,7 +17,11 @@ interface PageProps {
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { slug } = await params;
-  const article = await prisma.article.findUnique({ where: { slug } });
+  const { data: article } = await supabaseAdmin
+    .from("Article")
+    .select("title, subtitle, imageUrl")
+    .eq("slug", slug)
+    .maybeSingle();
   if (!article) return {};
   return {
     title: article.title,
@@ -28,8 +32,8 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 
 export async function generateStaticParams() {
   try {
-    const articles = await prisma.article.findMany({ select: { slug: true } });
-    return articles.map((a) => ({ slug: a.slug }));
+    const { data: articles } = await supabaseAdmin.from("Article").select("slug");
+    return (articles ?? []).map((a: { slug: string }) => ({ slug: a.slug }));
   } catch {
     return [];
   }
@@ -37,18 +41,21 @@ export async function generateStaticParams() {
 
 export default async function ArticlePage({ params }: PageProps) {
   const { slug } = await params;
-  const article = await prisma.article.findUnique({
-    where: { slug },
-    include: { author: true, category: true },
-  });
+
+  const { data: article } = await supabaseAdmin
+    .from("Article")
+    .select("*, author:User(id, name, image), category:Category(*)")
+    .eq("slug", slug)
+    .maybeSingle();
 
   if (!article) notFound();
 
-  const related = await prisma.article.findMany({
-    where: { categoryId: article.categoryId ?? undefined, NOT: { id: article.id } },
-    take: 3,
-    include: { category: true },
-  });
+  const { data: related } = await supabaseAdmin
+    .from("Article")
+    .select("*, category:Category(*)")
+    .eq("categoryId", article.categoryId ?? "")
+    .neq("id", article.id)
+    .limit(3);
 
   return (
     <article className="container max-w-3xl py-12">
@@ -60,7 +67,7 @@ export default async function ArticlePage({ params }: PageProps) {
         {article.subtitle && <p className="mt-2 text-lg text-brown-400">{article.subtitle}</p>}
 
         <div className="mt-4 flex items-center gap-4 text-sm text-brown-500">
-          <span>{article.author.name}</span>
+          <span>{article.author?.name}</span>
           <span>·</span>
           <span>{formatDate(article.publishedAt)}</span>
           <span className="flex items-center gap-1">
@@ -79,11 +86,11 @@ export default async function ArticlePage({ params }: PageProps) {
         {article.content}
       </div>
 
-      {related.length > 0 && (
+      {(related ?? []).length > 0 && (
         <div className="mt-16">
           <h2 className="mb-6 text-2xl font-bold text-brown-600">Articoli correlati</h2>
           <div className="grid gap-6 sm:grid-cols-3">
-            {related.map((a) => (
+            {(related ?? []).map((a) => (
               <ArticleCard
                 key={a.id}
                 slug={a.slug}

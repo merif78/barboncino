@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { auth } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
+import { supabaseAdmin } from "@/lib/supabase";
 import { diaryFormSchema } from "@/lib/validations";
 
 export async function GET(request: Request) {
@@ -13,13 +13,22 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const dogId = searchParams.get("dogId");
 
-  const entries = await prisma.diary.findMany({
-    where: {
-      userId: session.user.id,
-      ...(dogId ? { dogId } : {}),
-    },
-    orderBy: { date: "desc" },
-  });
+  let query = supabaseAdmin
+    .from("Diary")
+    .select("*")
+    .eq("userId", session.user.id)
+    .order("date", { ascending: false });
+
+  if (dogId) {
+    query = query.eq("dogId", dogId);
+  }
+
+  const { data: entries, error } = await query;
+
+  if (error) {
+    console.error(error);
+    return NextResponse.json({ error: "Errore nel caricamento del diario" }, { status: 500 });
+  }
 
   return NextResponse.json({ entries });
 }
@@ -40,13 +49,20 @@ export async function POST(request: Request) {
 
     const { date, ...rest } = parsed.data;
 
-    const entry = await prisma.diary.create({
-      data: {
+    const { data: entry, error } = await supabaseAdmin
+      .from("Diary")
+      .insert({
+        id: crypto.randomUUID(),
         ...rest,
-        date: new Date(date),
+        date: new Date(date).toISOString(),
         userId: session.user.id,
-      },
-    });
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      })
+      .select()
+      .single();
+
+    if (error) throw error;
 
     return NextResponse.json({ entry }, { status: 201 });
   } catch (error) {

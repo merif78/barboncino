@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { auth } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
+import { supabaseAdmin } from "@/lib/supabase";
 import { weightFormSchema } from "@/lib/validations";
 
 export async function POST(request: Request) {
@@ -20,24 +20,36 @@ export async function POST(request: Request) {
 
     const { date, dogId, ...rest } = parsed.data;
 
-    const dog = await prisma.dog.findFirst({ where: { id: dogId, userId: session.user.id } });
+    const { data: dog } = await supabaseAdmin
+      .from("Dog")
+      .select("id")
+      .eq("id", dogId)
+      .eq("userId", session.user.id)
+      .maybeSingle();
+
     if (!dog) {
       return NextResponse.json({ error: "Cane non trovato" }, { status: 404 });
     }
 
-    const entry = await prisma.weightHistory.create({
-      data: {
+    const { data: entry, error } = await supabaseAdmin
+      .from("WeightHistory")
+      .insert({
+        id: crypto.randomUUID(),
         ...rest,
-        date: new Date(date),
+        date: new Date(date).toISOString(),
         dogId,
-      },
-    });
+        createdAt: new Date().toISOString(),
+      })
+      .select()
+      .single();
+
+    if (error) throw error;
 
     // Aggiorna anche i valori correnti sul profilo del cane
-    await prisma.dog.update({
-      where: { id: dogId },
-      data: { weight: rest.weight, height: rest.height },
-    });
+    await supabaseAdmin
+      .from("Dog")
+      .update({ weight: rest.weight, height: rest.height, updatedAt: new Date().toISOString() })
+      .eq("id", dogId);
 
     return NextResponse.json({ entry }, { status: 201 });
   } catch (error) {

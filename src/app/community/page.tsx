@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { MessageCircle, Users, Heart } from "lucide-react";
 
-import { prisma } from "@/lib/prisma";
+import { supabaseAdmin } from "@/lib/supabase";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { formatDate } from "@/lib/utils";
@@ -14,11 +14,19 @@ export const metadata: Metadata = {
 export const dynamic = "force-dynamic";
 
 export default async function CommunityPage() {
-  const articles = await prisma.article.findMany({
-    take: 6,
-    orderBy: { publishedAt: "desc" },
-    include: { author: true, _count: { select: { comments: true, likes: true } } },
-  });
+  const { data: raw } = await supabaseAdmin
+    .from("Article")
+    .select("*, author:User(id, name, image), Comment(count), Like(count)")
+    .order("publishedAt", { ascending: false })
+    .limit(6);
+
+  const articles = (raw ?? []).map((a) => ({
+    ...a,
+    _count: {
+      comments: (a.Comment as Array<{ count: number }>)?.[0]?.count ?? 0,
+      likes: (a.Like as Array<{ count: number }>)?.[0]?.count ?? 0,
+    },
+  }));
 
   return (
     <div className="container py-12">
@@ -62,13 +70,13 @@ export default async function CommunityPage() {
               <CardContent className="flex items-center justify-between gap-4 pt-6">
                 <div className="flex items-center gap-3">
                   <Avatar>
-                    <AvatarImage src={article.author.image ?? undefined} />
-                    <AvatarFallback>{article.author.name?.[0]}</AvatarFallback>
+                    <AvatarImage src={article.author?.image ?? undefined} />
+                    <AvatarFallback>{article.author?.name?.[0]}</AvatarFallback>
                   </Avatar>
                   <div>
                     <p className="font-medium text-brown-600">{article.title}</p>
                     <p className="text-xs text-brown-400">
-                      {article.author.name} · {formatDate(article.publishedAt)}
+                      {article.author?.name} · {formatDate(article.publishedAt)}
                     </p>
                   </div>
                 </div>
